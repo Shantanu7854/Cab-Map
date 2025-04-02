@@ -110,6 +110,9 @@ CORS(app)  # Enable CORS for all routes
 # Get the API key from the environment variables
 GEOCODING_API_KEY = os.getenv('GEOCODING_API_KEY')
 
+if not GEOCODING_API_KEY:
+    raise ValueError("GEOCODING_API_KEY is missing from environment variables.")
+
 # Route for getting simple address
 @app.route('/get-simple-address', methods=['POST'])
 def get_simple_address():
@@ -122,8 +125,10 @@ def get_simple_address():
     # Unshorten the URL
     try:
         full_url = unshort_url(url)
+        if not full_url:
+            return jsonify({'error': 'Unshortened URL is empty'}), 400
     except Exception as e:
-        return jsonify({'error': 'Failed to unshorten URL'}), 500
+        return jsonify({'error': 'Failed to unshorten URL', 'details': str(e)}), 500
 
     # Extract the address from the unshortened URL
     try:
@@ -148,13 +153,20 @@ def get_detailed_address():
     # Unshorten the URL
     try:
         unshortened_url = unshort_url(shortened_url)
+        if not unshortened_url:
+            return jsonify({'error': 'Unshortened URL is empty'}), 400
     except Exception as e:
         return jsonify({'error': 'Failed to unshorten URL', 'details': str(e)}), 500
 
     # Extract latitude and longitude from the URL
     try:
-        location = unshortened_url.split("/@")[1].split(",")[0:2]
-        lat, lng = location[0], location[1]
+        if "/@" in unshortened_url:
+            location = unshortened_url.split("/@")[1].split(",")[0:2]
+            if len(location) < 2:
+                return jsonify({'error': 'Invalid coordinates format'}), 400
+            lat, lng = location[0], location[1]
+        else:
+            return jsonify({'error': 'No coordinates found in the URL'}), 400
     except Exception as e:
         return jsonify({'error': 'Failed to extract coordinates', 'details': str(e)}), 400
 
@@ -163,7 +175,11 @@ def get_detailed_address():
     response = requests.get(geocode_url)
 
     if response.status_code == 200:
-        address = response.json()['results'][0]['formatted_address']
+        results = response.json().get('results', [])
+        if not results:
+            return jsonify({'error': 'No address found for given coordinates'}), 400
+
+        address = results[0].get('formatted_address', 'Address not found')
         return jsonify({'address': address, 'lat': lat, 'lng': lng}), 200
     else:
         return jsonify({'error': 'Failed to fetch address from Geocoding API'}), 500
