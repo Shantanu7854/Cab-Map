@@ -1,198 +1,65 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-from unalix import unshort_url
-from urllib.parse import unquote
 import requests
-import os
-from dotenv import load_dotenv
-
-
-load_dotenv()
+from unalix import unshort_url
 
 app = Flask(__name__)
-CORS(app)  
 
-# GEOCODING_API_KEY = os.getenv('GEOCODING_API_KEY')
+# Route to resolve Google Maps short links and get address using Nominatim
+@app.route("/resolve", methods=["POST"])
+def resolve_map_link():
+    data = request.json
+    short_url = data.get("url")
 
-# if not GEOCODING_API_KEY:
-#     raise ValueError("GEOCODING_API_KEY is missing from environment variables.")
+    if not short_url:
+        return jsonify({"error": "No URL provided"}), 400
 
-# Route for getting simple address
-@app.route('/get-simple-address', methods=['POST'])
-def get_simple_address():
-    data = request.get_json()
-    url = data.get('url')
+    # Step 1: Unshorten the URL
+    long_url = unshort_url(short_url)
 
-    if not url:
-        return jsonify({'error': 'No URL provided'}), 400
+    # Step 2: Extract latitude & longitude from URL
+    import re
+    match = re.search(r"@(-?\d+\.\d+),(-?\d+\.\d+)", long_url)
+    if not match:
+        return jsonify({"error": "Coordinates not found in URL"}), 400
 
-    # Unshorten the URL
-    try:
-        full_url = unshort_url(url)
-        if not full_url:
-            return jsonify({'error': 'Unshortened URL is empty'}), 400
-    except Exception as e:
-        return jsonify({'error': 'Failed to unshorten URL', 'details': str(e)}), 500
+    lat, lon = match.groups()
 
-    # Extract address from the unshortened URL
-    try:
-        if "/place/" in full_url:
-            address = full_url.split('/place/')[1].split('/')[0]
-            address = unquote(address.replace('+', ' '))
-            return jsonify({'address': address}), 200
-        else:
-            return jsonify({'error': 'No address found in the URL'}), 400
-    except Exception as e:
-        return jsonify({'error': 'Failed to extract address from the URL', 'details': str(e)}), 500
+    # Step 3: Call Nominatim reverse geocoding API
+    nominatim_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+    headers = {"User-Agent": "MyApp/1.0"}  # Nominatim requires a User-Agent
+    response = requests.get(nominatim_url, headers=headers)
 
-# Route for getting detailed address (returns only lat/lng now)
-@app.route('/get-detailed-address', methods=['POST'])
-def get_detailed_address():
-    data = request.get_json()
-    shortened_url = data.get('url')
+    if response.status_code != 200:
+        return jsonify({"error": "Failed to fetch address from Nominatim"}), 500
 
-    if not shortened_url:
-        return jsonify({'error': 'URL is required'}), 400
-
-    # Unshorten the URL
-    try:
-        unshortened_url = unshort_url(shortened_url)
-        if not unshortened_url:
-            return jsonify({'error': 'Unshortened URL is empty'}), 400
-    except Exception as e:
-        return jsonify({'error': 'Failed to unshorten URL', 'details': str(e)}), 500
-
-    # Extract latitude and longitude from the URL
-    try:
-        if "/@" in unshortened_url:
-            location = unshortened_url.split("/@")[1].split(",")[0:2]
-            if len(location) < 2:
-                return jsonify({'error': 'Invalid coordinates format'}), 400
-            lat, lng = location[0], location[1]
-        else:
-            return jsonify({'error': 'No coordinates found in the URL'}), 400
-    except Exception as e:
-        return jsonify({'error': 'Failed to extract coordinates', 'details': str(e)}), 400
-
-    # Google Maps Geocoding API logic is commented out
-    """
-    geocode_url = f'https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lng}&key={GEOCODING_API_KEY}'
-    response = requests.get(geocode_url)
-
-    if response.status_code == 200:
-        results = response.json().get('results', [])
-        if not results:
-            return jsonify({'error': 'No address found for given coordinates'}), 400
-
-        address = results[0].get('formatted_address', 'Address not found')
-        return jsonify({'address': address, 'lat': lat, 'lng': lng}), 200
-    else:
-        return jsonify({'error': 'Failed to fetch address from Geocoding API'}), 500
-    """
+    address = response.json().get("display_name", "Address not found")
 
     return jsonify({
-        'lat': lat,
-        'lng': lng,
-        'note': 'Google Maps Geocoding API is disabled.'
-    }), 200
+        "short_url": short_url,
+        "long_url": long_url,
+        "latitude": lat,
+        "longitude": lon,
+        "address": address
+    })
 
-if __name__ == '__main__':
+@app.route("/geocode", methods=["GET"])
+def geocode():
+    url = request.args.get("url")
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+
+    # Example: treat url as an address (basic test)
+    params = {"q": url, "format": "json"}
+    res = requests.get("https://nominatim.openstreetmap.org/search", params=params, headers={"User-Agent": "my-app"})
+    data = res.json()
+
+    if not data:
+        return jsonify({"error": "Address not found"}), 404
+
+    return jsonify({
+        "lat": data[0]["lat"],
+        "lon": data[0]["lon"]
+    })
+
+if __name__ == "__main__":
     app.run(debug=True)
-
-
-
-# code 1
-# from flask import Flask, request, jsonify
-# from flask_cors import CORS
-# from unalix import unshort_url
-# import requests
-# import os
-# from dotenv import load_dotenv
-
-# # Load environment variables from the .env file
-# load_dotenv()
-
-# app = Flask(__name__)
-# CORS(app)  # Enable CORS for all routes
-
-# # Get the API key from the environment variables
-# GEOCODING_API_KEY = os.getenv('GEOCODING_API_KEY')
-
-# @app.route('/get-address', methods=['POST'])
-# def get_address():
-#     data = request.get_json()
-#     shortened_url = data.get('url')
-
-#     if not shortened_url:
-#         return jsonify({'error': 'URL is required'}), 400
-
-#     # Unshorten the URL
-#     try:
-#         unshortened_url = unshort_url(shortened_url)
-#     except Exception as e:
-#         return jsonify({'error': 'Failed to unshorten URL', 'details': str(e)}), 500
-
-#     # Extract latitude and longitude from unshortened Google Maps URL
-#     try:
-#         location = unshortened_url.split("/@")[1].split(",")[0:2]
-#         lat, lng = location[0], location[1]
-#     except Exception as e:
-#         return jsonify({'error': 'Failed to extract coordinates', 'details': str(e)}), 400
-
-#     # Make a request to the Geocoding API to get the address
-#     geocode_url = f'https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lng}&key={GEOCODING_API_KEY}'
-#     response = requests.get(geocode_url)
-
-#     if response.status_code == 200:
-#         address = response.json()['results'][0]['formatted_address']
-#         return jsonify({'address': address}), 200
-#     else:
-#         return jsonify({'error': 'Failed to fetch address from Geocoding API'}), 500
-
-# if __name__ == '__main__':
-#     app.run(debug=True)
-
-# code 2
-# from flask import Flask, request, jsonify
-# from flask_cors import CORS
-# from unalix import unshort_url
-# from urllib.parse import unquote
-
-# app = Flask(__name__)
-# CORS(app)  # Enable CORS for all routes
-
-# @app.route('/get-address', methods=['POST'])
-# def get_address():
-#     data = request.get_json()
-#     url = data.get('url')
-
-#     if not url:
-#         return jsonify({'error': 'No URL provided'}), 400
-
-#     # Step 1: Unshorten the URL
-#     try:
-#         full_url = unshort_url(url)
-#     except Exception as e:
-#         return jsonify({'error': 'Failed to unshorten URL'}), 500
-
-#     # Step 2: Extract address from the unshortened URL (if present)
-#     try:
-#         if "/place/" in full_url:
-#             # The address comes after '/place/' and ends before the next '/'
-#             address = full_url.split('/place/')[1].split('/')[0]
-
-#             # Step 3: Decode the URL encoding to make it human-readable
-#             address = unquote(address.replace('+', ' '))
-
-#             return jsonify({'address': address}), 200
-#         else:
-#             return jsonify({'error': 'No address found in the URL'}), 400
-#     except Exception as e:
-#         return jsonify({'error': 'Failed to extract address from the URL'}), 500
-
-
-# if __name__ == '__main__':
-#     app.run(debug=True)
-
-
-
