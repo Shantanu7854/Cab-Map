@@ -1,8 +1,68 @@
 from flask import Flask, request, jsonify
 import requests
 from unalix import unshort_url
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+CORS(app)
+
+@app.route("/")
+def home():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Map Link Locator API</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; line-height: 1.6; color: #333; }
+            h1 { color: #2c3e50; }
+            pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+            code { color: #c7254e; }
+            a { color: #3498db; text-decoration: none; }
+        </style>
+    </head>
+    <body>
+        <h1>Welcome to Map Link Locator API 🚀</h1>
+        <p>This API helps you extract addresses and coordinates from Google Maps links or plain addresses using Nominatim (OpenStreetMap).</p>
+
+        <h2>Endpoints</h2>
+        <ul>
+            <li>
+                <strong>/resolve</strong> (POST) - Extract address and coordinates from a Google Maps link.<br>
+                <em>JSON body:</em>
+                <pre>{
+    "url": "https://maps.app.goo.gl/CRHj8dMu9hKy143aA"
+}</pre>
+            </li>
+            <li>
+                <strong>/geocode</strong> (POST) - Get latitude and longitude from a plain address.<br>
+                <em>JSON body:</em>
+                <pre>{
+    "address": "New Delhi, India"
+}</pre>
+            </li>
+        </ul>
+
+        <h2>Example Usage in Postman</h2>
+        <p>1. Set method to <code>POST</code></p>
+        <p>2. Enter the full URL:</p>
+        <pre>https://map-link-locator-backend-1.onrender.com/resolve</pre>
+        <p>3. Set Headers: <code>Content-Type: application/json</code></p>
+        <p>4. Add JSON body as shown above.</p>
+
+        <h2>Notes</h2>
+        <ul>
+            <li>Make sure to send POST requests for these endpoints.</li>
+            <li>Nominatim requires a <code>User-Agent</code>, handled automatically in the backend.</li>
+        </ul>
+
+        <p>Happy geocoding! 🌍</p>
+    </body>
+    </html>
+    """
+
 
 # Route to resolve Google Maps short links and get address using Nominatim
 @app.route("/resolve", methods=["POST"])
